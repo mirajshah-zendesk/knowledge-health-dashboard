@@ -106,19 +106,28 @@ def get_brand_detail(_session, database, account_id):
             PARTITION BY instance_account_id, instance_brand_id, metric_id
             ORDER BY created_at DESC
         ) = 1
+    ),
+    brand_metrics AS (
+        SELECT
+            instance_brand_id,
+            MAX(CASE WHEN metric_id = 'article_ai_readiness' THEN value_amount END) as article_ai_readiness_value,
+            MAX(CASE WHEN metric_id = 'article_ai_readiness' THEN trend_change_amount END) as article_ai_readiness_trend,
+            MAX(CASE WHEN metric_id = 'content_coverage' THEN value_amount END) as content_coverage_value,
+            MAX(CASE WHEN metric_id = 'content_coverage' THEN trend_change_amount END) as content_coverage_trend,
+            MAX(CASE WHEN metric_id = 'article_freshness' THEN value_amount END) as article_freshness_value,
+            MAX(CASE WHEN metric_id = 'article_freshness' THEN trend_change_amount END) as article_freshness_trend,
+            MAX(created_at) as last_updated
+        FROM latest_metrics
+        GROUP BY instance_brand_id
     )
     SELECT
-        instance_brand_id,
-        MAX(CASE WHEN metric_id = 'article_ai_readiness' THEN value_amount END) as article_ai_readiness_value,
-        MAX(CASE WHEN metric_id = 'article_ai_readiness' THEN trend_change_amount END) as article_ai_readiness_trend,
-        MAX(CASE WHEN metric_id = 'content_coverage' THEN value_amount END) as content_coverage_value,
-        MAX(CASE WHEN metric_id = 'content_coverage' THEN trend_change_amount END) as content_coverage_trend,
-        MAX(CASE WHEN metric_id = 'article_freshness' THEN value_amount END) as article_freshness_value,
-        MAX(CASE WHEN metric_id = 'article_freshness' THEN trend_change_amount END) as article_freshness_trend,
-        MAX(created_at) as last_updated
-    FROM latest_metrics
-    GROUP BY instance_brand_id
-    ORDER BY instance_brand_id
+        bm.*,
+        COALESCE(bn.INSTANCE_BRAND_NAME, 'Brand ' || bm.instance_brand_id) as brand_name
+    FROM brand_metrics bm
+    LEFT JOIN FUNCTIONAL.PRODUCT_ANALYTICS.INSTANCE_ACCOUNT_BRANDS_DAILY_SNAPSHOT bn
+        ON bm.instance_brand_id = bn.INSTANCE_BRAND_ID
+        AND bn.SOURCE_SNAPSHOT_DATE = (SELECT MAX(SOURCE_SNAPSHOT_DATE) FROM FUNCTIONAL.PRODUCT_ANALYTICS.INSTANCE_ACCOUNT_BRANDS_DAILY_SNAPSHOT)
+    ORDER BY bm.instance_brand_id
     """
     return _session.sql(query).to_pandas()
 
@@ -126,18 +135,27 @@ def get_brand_detail(_session, database, account_id):
 @st.cache_data(ttl=3600)
 def get_brand_trends(_session, database, account_id):
     query = f"""
+    WITH trends AS (
+        SELECT
+            instance_brand_id,
+            metric_id,
+            DATE(created_at) as metric_date,
+            value_amount
+        FROM {database}.PRODUCT_ML_SCIENCE.KNOWLEDGE_HEALTH_METRICS
+        WHERE instance_account_id = {account_id}
+            AND created_at >= DATEADD(day, -90, CURRENT_DATE())
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY instance_brand_id, metric_id, DATE(created_at)
+            ORDER BY created_at DESC
+        ) = 1
+    )
     SELECT
-        instance_brand_id,
-        metric_id,
-        DATE(created_at) as metric_date,
-        value_amount
-    FROM {database}.PRODUCT_ML_SCIENCE.KNOWLEDGE_HEALTH_METRICS
-    WHERE instance_account_id = {account_id}
-        AND created_at >= DATEADD(day, -90, CURRENT_DATE())
-    QUALIFY ROW_NUMBER() OVER (
-        PARTITION BY instance_brand_id, metric_id, DATE(created_at)
-        ORDER BY created_at DESC
-    ) = 1
+        t.*,
+        COALESCE(bn.INSTANCE_BRAND_NAME, 'Brand ' || t.instance_brand_id) as brand_name
+    FROM trends t
+    LEFT JOIN FUNCTIONAL.PRODUCT_ANALYTICS.INSTANCE_ACCOUNT_BRANDS_DAILY_SNAPSHOT bn
+        ON t.instance_brand_id = bn.INSTANCE_BRAND_ID
+        AND bn.SOURCE_SNAPSHOT_DATE = (SELECT MAX(SOURCE_SNAPSHOT_DATE) FROM FUNCTIONAL.PRODUCT_ANALYTICS.INSTANCE_ACCOUNT_BRANDS_DAILY_SNAPSHOT)
     ORDER BY metric_date, instance_brand_id, metric_id
     """
     return _session.sql(query).to_pandas()
@@ -274,9 +292,8 @@ if selected_account:
     # Trend charts - 90 day history
     st.markdown("#### 90-Day Metric Trends by Brand")
 
-    # Create a brand ID to friendly name mapping (sorted by brand ID for consistency)
-    unique_brand_ids = sorted(df_brands['INSTANCE_BRAND_ID'].unique())
-    brand_name_map = {brand_id: f'Brand {i+1}' for i, brand_id in enumerate(unique_brand_ids)}
+    # Create a brand ID to name mapping from the data
+    brand_name_map = df_brands.set_index('INSTANCE_BRAND_ID')['BRAND_NAME'].to_dict()
 
     # Prepare data for each metric
     metrics = {
@@ -293,13 +310,10 @@ if selected_account:
 
         if not metric_data.empty:
             # Pivot data: dates as index, brands as columns
-            chart_data = metric_data.pivot(index='METRIC_DATE', columns='INSTANCE_BRAND_ID', values='VALUE_AMOUNT')
+            chart_data = metric_data.pivot(index='METRIC_DATE', columns='BRAND_NAME', values='VALUE_AMOUNT')
 
             # Add average across all brands
             chart_data['Account Average'] = chart_data.mean(axis=1)
-
-            # Rename brand columns using the friendly name map
-            chart_data.columns = [brand_name_map.get(col, col) if col != 'Account Average' else col for col in chart_data.columns]
 
             # Display line chart
             st.line_chart(chart_data)
@@ -312,9 +326,6 @@ if selected_account:
     st.markdown("#### Current Snapshot - Brand Metrics")
 
     df_brands_display = df_brands.copy()
-
-    # Add friendly brand name column
-    df_brands_display['BRAND_NAME'] = df_brands_display['INSTANCE_BRAND_ID'].map(brand_name_map)
 
     df_brands_display['ARTICLE_AI_READINESS_VALUE'] = df_brands_display['ARTICLE_AI_READINESS_VALUE'].round(1)
     df_brands_display['CONTENT_COVERAGE_VALUE'] = df_brands_display['CONTENT_COVERAGE_VALUE'].round(1)
@@ -337,7 +348,7 @@ if selected_account:
     ]]
 
     df_brands_display = df_brands_display.rename(columns={
-        'BRAND_NAME': 'Brand',
+        'BRAND_NAME': 'Brand Name',
         'INSTANCE_BRAND_ID': 'Brand ID',
         'ARTICLE_AI_READINESS_VALUE': 'AI Readiness %',
         'ARTICLE_AI_READINESS_TREND': 'AI Readiness Trend',
