@@ -274,6 +274,10 @@ if selected_account:
     # Trend charts - 90 day history
     st.markdown("#### 90-Day Metric Trends by Brand")
 
+    # Create a brand ID to friendly name mapping (sorted by brand ID for consistency)
+    unique_brand_ids = sorted(df_brands['INSTANCE_BRAND_ID'].unique())
+    brand_name_map = {brand_id: f'Brand {i+1}' for i, brand_id in enumerate(unique_brand_ids)}
+
     # Prepare data for each metric
     metrics = {
         'article_ai_readiness': 'AI Readiness',
@@ -294,8 +298,8 @@ if selected_account:
             # Add average across all brands
             chart_data['Account Average'] = chart_data.mean(axis=1)
 
-            # Rename brand columns
-            chart_data.columns = [f'Brand {col}' if col != 'Account Average' else col for col in chart_data.columns]
+            # Rename brand columns using the friendly name map
+            chart_data.columns = [brand_name_map.get(col, col) if col != 'Account Average' else col for col in chart_data.columns]
 
             # Display line chart
             st.line_chart(chart_data)
@@ -308,6 +312,10 @@ if selected_account:
     st.markdown("#### Current Snapshot - Brand Metrics")
 
     df_brands_display = df_brands.copy()
+
+    # Add friendly brand name column
+    df_brands_display['BRAND_NAME'] = df_brands_display['INSTANCE_BRAND_ID'].map(brand_name_map)
+
     df_brands_display['ARTICLE_AI_READINESS_VALUE'] = df_brands_display['ARTICLE_AI_READINESS_VALUE'].round(1)
     df_brands_display['CONTENT_COVERAGE_VALUE'] = df_brands_display['CONTENT_COVERAGE_VALUE'].round(1)
     df_brands_display['ARTICLE_FRESHNESS_VALUE'] = df_brands_display['ARTICLE_FRESHNESS_VALUE'].round(1)
@@ -315,8 +323,21 @@ if selected_account:
     df_brands_display['CONTENT_COVERAGE_TREND'] = df_brands_display['CONTENT_COVERAGE_TREND'].round(2)
     df_brands_display['ARTICLE_FRESHNESS_TREND'] = df_brands_display['ARTICLE_FRESHNESS_TREND'].round(2)
 
-    # Rename columns for better display
+    # Reorder and rename columns for better display
+    df_brands_display = df_brands_display[[
+        'BRAND_NAME',
+        'INSTANCE_BRAND_ID',
+        'ARTICLE_AI_READINESS_VALUE',
+        'ARTICLE_AI_READINESS_TREND',
+        'CONTENT_COVERAGE_VALUE',
+        'CONTENT_COVERAGE_TREND',
+        'ARTICLE_FRESHNESS_VALUE',
+        'ARTICLE_FRESHNESS_TREND',
+        'LAST_UPDATED'
+    ]]
+
     df_brands_display = df_brands_display.rename(columns={
+        'BRAND_NAME': 'Brand',
         'INSTANCE_BRAND_ID': 'Brand ID',
         'ARTICLE_AI_READINESS_VALUE': 'AI Readiness %',
         'ARTICLE_AI_READINESS_TREND': 'AI Readiness Trend',
