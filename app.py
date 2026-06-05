@@ -140,24 +140,25 @@ df_display = df_filtered.copy()
 df_display['ARTICLE_AI_READINESS_VALUE'] = df_display['ARTICLE_AI_READINESS_VALUE'].round(1)
 df_display['CONTENT_COVERAGE_VALUE'] = df_display['CONTENT_COVERAGE_VALUE'].round(1)
 df_display['ARTICLE_FRESHNESS_VALUE'] = df_display['ARTICLE_FRESHNESS_VALUE'].round(1)
+df_display['ARTICLE_AI_READINESS_TREND'] = df_display['ARTICLE_AI_READINESS_TREND'].round(2)
+df_display['CONTENT_COVERAGE_TREND'] = df_display['CONTENT_COVERAGE_TREND'].round(2)
+df_display['ARTICLE_FRESHNESS_TREND'] = df_display['ARTICLE_FRESHNESS_TREND'].round(2)
+
+# Rename columns for better display
+df_display = df_display.rename(columns={
+    'INSTANCE_ACCOUNT_ID': 'Account ID',
+    'BRAND_COUNT': '# Brands',
+    'ARTICLE_AI_READINESS_VALUE': 'AI Readiness %',
+    'ARTICLE_AI_READINESS_TREND': 'AI Readiness Trend',
+    'CONTENT_COVERAGE_VALUE': 'Content Coverage %',
+    'CONTENT_COVERAGE_TREND': 'Coverage Trend',
+    'ARTICLE_FRESHNESS_VALUE': 'Article Freshness %',
+    'ARTICLE_FRESHNESS_TREND': 'Freshness Trend',
+    'LAST_UPDATED': 'Last Updated'
+})
 
 # Display the table
-st.dataframe(
-    df_display,
-    column_config={
-        "INSTANCE_ACCOUNT_ID": st.column_config.NumberColumn("Account ID", format="%d"),
-        "BRAND_COUNT": st.column_config.NumberColumn("# Brands", format="%d"),
-        "ARTICLE_AI_READINESS_VALUE": st.column_config.NumberColumn("AI Readiness %", format="%.1f"),
-        "ARTICLE_AI_READINESS_TREND": st.column_config.NumberColumn("AI Readiness Trend", format="%.2f"),
-        "CONTENT_COVERAGE_VALUE": st.column_config.NumberColumn("Content Coverage %", format="%.1f"),
-        "CONTENT_COVERAGE_TREND": st.column_config.NumberColumn("Coverage Trend", format="%.2f"),
-        "ARTICLE_FRESHNESS_VALUE": st.column_config.NumberColumn("Article Freshness %", format="%.1f"),
-        "ARTICLE_FRESHNESS_TREND": st.column_config.NumberColumn("Freshness Trend", format="%.2f"),
-        "LAST_UPDATED": st.column_config.DatetimeColumn("Last Updated", format="YYYY-MM-DD HH:mm")
-    },
-    use_container_width=True,
-    height=400
-)
+st.dataframe(df_display, use_container_width=True, height=400)
 
 st.markdown("---")
 
@@ -198,21 +199,23 @@ if selected_account:
     df_brands_display['ARTICLE_AI_READINESS_VALUE'] = df_brands_display['ARTICLE_AI_READINESS_VALUE'].round(1)
     df_brands_display['CONTENT_COVERAGE_VALUE'] = df_brands_display['CONTENT_COVERAGE_VALUE'].round(1)
     df_brands_display['ARTICLE_FRESHNESS_VALUE'] = df_brands_display['ARTICLE_FRESHNESS_VALUE'].round(1)
+    df_brands_display['ARTICLE_AI_READINESS_TREND'] = df_brands_display['ARTICLE_AI_READINESS_TREND'].round(2)
+    df_brands_display['CONTENT_COVERAGE_TREND'] = df_brands_display['CONTENT_COVERAGE_TREND'].round(2)
+    df_brands_display['ARTICLE_FRESHNESS_TREND'] = df_brands_display['ARTICLE_FRESHNESS_TREND'].round(2)
 
-    st.dataframe(
-        df_brands_display,
-        column_config={
-            "INSTANCE_BRAND_ID": st.column_config.NumberColumn("Brand ID", format="%d"),
-            "ARTICLE_AI_READINESS_VALUE": st.column_config.NumberColumn("AI Readiness %", format="%.1f"),
-            "ARTICLE_AI_READINESS_TREND": st.column_config.NumberColumn("AI Readiness Trend", format="%.2f"),
-            "CONTENT_COVERAGE_VALUE": st.column_config.NumberColumn("Content Coverage %", format="%.1f"),
-            "CONTENT_COVERAGE_TREND": st.column_config.NumberColumn("Coverage Trend", format="%.2f"),
-            "ARTICLE_FRESHNESS_VALUE": st.column_config.NumberColumn("Article Freshness %", format="%.1f"),
-            "ARTICLE_FRESHNESS_TREND": st.column_config.NumberColumn("Freshness Trend", format="%.2f"),
-            "LAST_UPDATED": st.column_config.DatetimeColumn("Last Updated", format="YYYY-MM-DD HH:mm")
-        },
-        use_container_width=True
-    )
+    # Rename columns for better display
+    df_brands_display = df_brands_display.rename(columns={
+        'INSTANCE_BRAND_ID': 'Brand ID',
+        'ARTICLE_AI_READINESS_VALUE': 'AI Readiness %',
+        'ARTICLE_AI_READINESS_TREND': 'AI Readiness Trend',
+        'CONTENT_COVERAGE_VALUE': 'Content Coverage %',
+        'CONTENT_COVERAGE_TREND': 'Coverage Trend',
+        'ARTICLE_FRESHNESS_VALUE': 'Article Freshness %',
+        'ARTICLE_FRESHNESS_TREND': 'Freshness Trend',
+        'LAST_UPDATED': 'Last Updated'
+    })
+
+    st.dataframe(df_brands_display, use_container_width=True)
 
 # Footer
 st.markdown("---")
