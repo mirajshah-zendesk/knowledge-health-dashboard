@@ -32,7 +32,7 @@ database_map = {
 
 selected_database = database_map[region]
 
-# Query to get latest metrics aggregated by account
+# Query to get latest metrics aggregated by account with customer context
 @st.cache_data(ttl=3600)
 def get_account_summary(_session, database):
     query = f"""
@@ -64,8 +64,27 @@ def get_account_summary(_session, database):
         FROM latest_metrics
         GROUP BY instance_account_id
     )
-    SELECT * FROM account_metrics
-    ORDER BY instance_account_id
+    SELECT
+        am.*,
+        pcu.INSTANCE_ACCOUNT_SUBDOMAIN,
+        pcu.CRM_ACCOUNT_NAME,
+        pcu.CRM_NET_ARR_USD,
+        pcu.CRM_ARR_BAND_BROAD,
+        pcu.CRM_REGION,
+        pcu.CRM_TERRITORY_COUNTRY,
+        pcu.CRM_MARKET_SEGMENT,
+        pcu.CRM_INDUSTRY,
+        pcu.SEATS_CAPACITY,
+        pcu.SEATS_OCCUPIED,
+        pcu.PRODUCT_MIX,
+        pcu.CORE_BASE_PLAN,
+        pcu.TOP_3000_FLAG,
+        pcu.IS_LIVE
+    FROM account_metrics am
+    LEFT JOIN PROPAGATED_PRESENTATION.PRODUCT_ANALYTICS.PAID_CUSTOMER_UNIVERSE_DAILY_SNAPSHOT pcu
+        ON am.instance_account_id = pcu.INSTANCE_ACCOUNT_ID
+        AND pcu.IS_LATEST_DATE = TRUE
+    ORDER BY am.instance_account_id
     """
     return _session.sql(query).to_pandas()
 
@@ -126,35 +145,86 @@ st.markdown("---")
 # Account-level table with search and selection
 st.subheader("Account Summary")
 
-# Add search box
-search_term = st.text_input("🔍 Search by Account ID", "")
+# Add filters in sidebar
+st.sidebar.header("Filters")
+arr_bands = ['All'] + sorted(df_accounts['CRM_ARR_BAND_BROAD'].dropna().unique().tolist())
+selected_arr_band = st.sidebar.selectbox("ARR Band", arr_bands)
 
-# Filter accounts based on search
+market_segments = ['All'] + sorted(df_accounts['CRM_MARKET_SEGMENT'].dropna().unique().tolist())
+selected_segment = st.sidebar.selectbox("Market Segment", market_segments)
+
+industries = ['All'] + sorted(df_accounts['CRM_INDUSTRY'].dropna().unique().tolist())
+selected_industry = st.sidebar.selectbox("Industry", industries)
+
+# Add search box
+search_term = st.text_input("🔍 Search by Account ID, Name, or Subdomain", "")
+
+# Filter accounts based on search and filters
+df_filtered = df_accounts.copy()
+
 if search_term:
-    df_filtered = df_accounts[df_accounts['INSTANCE_ACCOUNT_ID'].astype(str).str.contains(search_term)]
-else:
-    df_filtered = df_accounts
+    df_filtered = df_filtered[
+        df_filtered['INSTANCE_ACCOUNT_ID'].astype(str).str.contains(search_term, case=False, na=False) |
+        df_filtered['CRM_ACCOUNT_NAME'].astype(str).str.contains(search_term, case=False, na=False) |
+        df_filtered['INSTANCE_ACCOUNT_SUBDOMAIN'].astype(str).str.contains(search_term, case=False, na=False)
+    ]
+
+if selected_arr_band != 'All':
+    df_filtered = df_filtered[df_filtered['CRM_ARR_BAND_BROAD'] == selected_arr_band]
+
+if selected_segment != 'All':
+    df_filtered = df_filtered[df_filtered['CRM_MARKET_SEGMENT'] == selected_segment]
+
+if selected_industry != 'All':
+    df_filtered = df_filtered[df_filtered['CRM_INDUSTRY'] == selected_industry]
 
 # Format the dataframe for display
 df_display = df_filtered.copy()
 df_display['ARTICLE_AI_READINESS_VALUE'] = df_display['ARTICLE_AI_READINESS_VALUE'].round(1)
 df_display['CONTENT_COVERAGE_VALUE'] = df_display['CONTENT_COVERAGE_VALUE'].round(1)
 df_display['ARTICLE_FRESHNESS_VALUE'] = df_display['ARTICLE_FRESHNESS_VALUE'].round(1)
-df_display['ARTICLE_AI_READINESS_TREND'] = df_display['ARTICLE_AI_READINESS_TREND'].round(2)
-df_display['CONTENT_COVERAGE_TREND'] = df_display['CONTENT_COVERAGE_TREND'].round(2)
-df_display['ARTICLE_FRESHNESS_TREND'] = df_display['ARTICLE_FRESHNESS_TREND'].round(2)
+df_display['CRM_NET_ARR_USD'] = df_display['CRM_NET_ARR_USD'].round(0)
+df_display['SEATS_CAPACITY'] = df_display['SEATS_CAPACITY'].round(0)
+df_display['SEATS_OCCUPIED'] = df_display['SEATS_OCCUPIED'].round(0)
+
+# Select and reorder columns for display
+df_display = df_display[[
+    'INSTANCE_ACCOUNT_ID',
+    'CRM_ACCOUNT_NAME',
+    'INSTANCE_ACCOUNT_SUBDOMAIN',
+    'CRM_ARR_BAND_BROAD',
+    'CRM_NET_ARR_USD',
+    'CRM_MARKET_SEGMENT',
+    'CRM_INDUSTRY',
+    'CRM_TERRITORY_COUNTRY',
+    'PRODUCT_MIX',
+    'SEATS_CAPACITY',
+    'BRAND_COUNT',
+    'ARTICLE_AI_READINESS_VALUE',
+    'CONTENT_COVERAGE_VALUE',
+    'ARTICLE_FRESHNESS_VALUE',
+    'TOP_3000_FLAG',
+    'IS_LIVE'
+]]
 
 # Rename columns for better display
 df_display = df_display.rename(columns={
     'INSTANCE_ACCOUNT_ID': 'Account ID',
+    'CRM_ACCOUNT_NAME': 'Company Name',
+    'INSTANCE_ACCOUNT_SUBDOMAIN': 'Subdomain',
+    'CRM_ARR_BAND_BROAD': 'ARR Band',
+    'CRM_NET_ARR_USD': 'ARR ($)',
+    'CRM_MARKET_SEGMENT': 'Segment',
+    'CRM_INDUSTRY': 'Industry',
+    'CRM_TERRITORY_COUNTRY': 'Country',
+    'PRODUCT_MIX': 'Product Mix',
+    'SEATS_CAPACITY': 'Seats',
     'BRAND_COUNT': '# Brands',
     'ARTICLE_AI_READINESS_VALUE': 'AI Readiness %',
-    'ARTICLE_AI_READINESS_TREND': 'AI Readiness Trend',
-    'CONTENT_COVERAGE_VALUE': 'Content Coverage %',
-    'CONTENT_COVERAGE_TREND': 'Coverage Trend',
-    'ARTICLE_FRESHNESS_VALUE': 'Article Freshness %',
-    'ARTICLE_FRESHNESS_TREND': 'Freshness Trend',
-    'LAST_UPDATED': 'Last Updated'
+    'CONTENT_COVERAGE_VALUE': 'Coverage %',
+    'ARTICLE_FRESHNESS_VALUE': 'Freshness %',
+    'TOP_3000_FLAG': 'Top 3000',
+    'IS_LIVE': 'Live'
 })
 
 # Display the table
