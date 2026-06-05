@@ -1,0 +1,7 @@
+definition_version: 1
+streamlit:
+  name: knowledge_health_dashboard
+  title: "Knowledge Base Health Dashboard"
+  query_warehouse: PUBLIC_ZENDESK_XS
+  main_file: app.py
+  stage: PRESENTATION.PUBLIC.streamlit_stage
