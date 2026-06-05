@@ -88,7 +88,7 @@ def get_account_summary(_session, database):
     """
     return _session.sql(query).to_pandas()
 
-# Query to get brand-level detail for a specific account
+# Query to get brand-level detail for a specific account (latest snapshot)
 @st.cache_data(ttl=3600)
 def get_brand_detail(_session, database, account_id):
     query = f"""
@@ -119,6 +119,26 @@ def get_brand_detail(_session, database, account_id):
     FROM latest_metrics
     GROUP BY instance_brand_id
     ORDER BY instance_brand_id
+    """
+    return _session.sql(query).to_pandas()
+
+# Query to get historical trends for brand-level metrics
+@st.cache_data(ttl=3600)
+def get_brand_trends(_session, database, account_id):
+    query = f"""
+    SELECT
+        instance_brand_id,
+        metric_id,
+        DATE(created_at) as metric_date,
+        value_amount
+    FROM {database}.PRODUCT_ML_SCIENCE.KNOWLEDGE_HEALTH_METRICS
+    WHERE instance_account_id = {account_id}
+        AND created_at >= DATEADD(day, -90, CURRENT_DATE())
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY instance_brand_id, metric_id, DATE(created_at)
+        ORDER BY created_at DESC
+    ) = 1
+    ORDER BY metric_date, instance_brand_id, metric_id
     """
     return _session.sql(query).to_pandas()
 
@@ -242,28 +262,50 @@ selected_account = st.selectbox(
 )
 
 if selected_account:
-    with st.spinner(f"Loading brands for account {selected_account}..."):
+    with st.spinner(f"Loading brand trends for account {selected_account}..."):
         df_brands = get_brand_detail(session, selected_database, selected_account)
+        df_trends = get_brand_trends(session, selected_database, selected_account)
 
-    # Display brand-level metrics
-    st.markdown(f"### Account {selected_account} - Brand Breakdown")
+    # Display account info
+    account_info = df_filtered[df_filtered['INSTANCE_ACCOUNT_ID'] == selected_account].iloc[0]
+    st.markdown(f"### {account_info['CRM_ACCOUNT_NAME']} (Account {selected_account})")
+    st.markdown(f"**Subdomain:** {account_info['INSTANCE_ACCOUNT_SUBDOMAIN']} | **Industry:** {account_info['CRM_INDUSTRY']} | **ARR:** ${account_info['CRM_NET_ARR_USD']:,.0f}")
 
-    col1, col2 = st.columns(2)
+    # Trend charts - 90 day history
+    st.markdown("#### 90-Day Metric Trends by Brand")
 
-    with col1:
-        st.markdown("#### AI Readiness by Brand")
-        chart_data = df_brands[['INSTANCE_BRAND_ID', 'ARTICLE_AI_READINESS_VALUE']].copy()
-        chart_data.columns = ['Brand ID', 'AI Readiness %']
-        st.bar_chart(chart_data.set_index('Brand ID'))
+    # Prepare data for each metric
+    metrics = {
+        'article_ai_readiness': 'AI Readiness',
+        'content_coverage': 'Content Coverage',
+        'article_freshness': 'Article Freshness'
+    }
 
-    with col2:
-        st.markdown("#### Content Coverage by Brand")
-        chart_data = df_brands[['INSTANCE_BRAND_ID', 'CONTENT_COVERAGE_VALUE']].copy()
-        chart_data.columns = ['Brand ID', 'Content Coverage %']
-        st.bar_chart(chart_data.set_index('Brand ID'))
+    for metric_id, metric_name in metrics.items():
+        st.markdown(f"##### {metric_name} %")
 
-    # Detailed brand table
-    st.markdown("#### Detailed Brand Metrics")
+        # Filter data for this metric
+        metric_data = df_trends[df_trends['METRIC_ID'] == metric_id].copy()
+
+        if not metric_data.empty:
+            # Pivot data: dates as index, brands as columns
+            chart_data = metric_data.pivot(index='METRIC_DATE', columns='INSTANCE_BRAND_ID', values='VALUE_AMOUNT')
+
+            # Add average across all brands
+            chart_data['Account Average'] = chart_data.mean(axis=1)
+
+            # Rename brand columns
+            chart_data.columns = [f'Brand {col}' if col != 'Account Average' else col for col in chart_data.columns]
+
+            # Display line chart
+            st.line_chart(chart_data)
+        else:
+            st.info(f"No historical data available for {metric_name}")
+
+    st.markdown("---")
+
+    # Current snapshot table
+    st.markdown("#### Current Snapshot - Brand Metrics")
 
     df_brands_display = df_brands.copy()
     df_brands_display['ARTICLE_AI_READINESS_VALUE'] = df_brands_display['ARTICLE_AI_READINESS_VALUE'].round(1)
